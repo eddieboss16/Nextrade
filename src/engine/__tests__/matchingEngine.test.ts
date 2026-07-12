@@ -270,8 +270,8 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-describe('engine construction', () => {
-  it('constructs with an empty book', () => {
+describe('placeholder describe to keep grouping tidy', () => {
+  it('engine constructs with an empty book', () => {
     const fresh = new MatchingEngine();
     expect(fresh.getSnapshot(INST).bids).toEqual([]);
     expect(fresh.getSnapshot(INST).asks).toEqual([]);

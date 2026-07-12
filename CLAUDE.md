@@ -49,6 +49,12 @@ toward real custody without that conversation happening explicitly first.
   *is* re-seeded from `MAX(sequence)` on restart, via `new MatchingEngine(startSequence)`,
   so regenerated ids never collide with persisted rows — but pre-restart resting orders
   are gone from the book and do not resume matching.)
+- **A failed persistence write can leave an order row at a stale status.** If a Postgres
+  write fails after a match (e.g. the row stays `pending` in the DB even though the order
+  has actually filled in memory), the write is logged and skipped, not retried. The
+  in-memory engine remains authoritative for matching state — the stale Postgres row is
+  never trusted over it. Automatic reconciliation of stuck/stale rows is out of scope for
+  v1.
 
 ## Status
 
@@ -57,9 +63,9 @@ toward real custody without that conversation happening explicitly first.
 `src/engine` (`types.ts`, `orderBook.ts`, `matchingEngine.ts`) is implemented and
 verified — not just tested, independently reviewed:
 
-- 28 tests passing: all 14 required Week 1 cases present and mapped one-to-one (not
-  diluted into combined tests), plus supplementary `OrderBook` unit tests and the
-  restart-seeding regression tests.
+- 28 tests passing: the original 25 Week 1 tests are unmodified (all 14 required cases
+  mapped one-to-one, not diluted into combined tests, plus supplementary `OrderBook`
+  unit tests), joined by 3 additive restart-seeding regression tests.
 - Confirmed by direct code inspection: self-trade skip correctly `continue`s within a
   price level and falls through to the next level rather than aborting the match.
 - Confirmed by type-level proof under strict `tsc`: zero `await` in the hot path —
@@ -72,10 +78,13 @@ verified — not just tested, independently reviewed:
 Week 2 bug looks like it originates here, treat that as notable and flag it explicitly —
 it should not need to change.
 
-Post-Week-1 change on record: `MatchingEngine` gained an optional `startSequence`
-constructor argument (default `1`) to re-seed the sequence counter on restart — a genuine
-restart-collision defect fix, flagged per the policy above. No matching or cancel logic
-changed; the hot path is still fully synchronous.
+**Week 2 exception to the engine's public surface (logged deliberately):** `MatchingEngine`
+gained an optional `startSequence` constructor argument (default `1`) so the Week 2
+persistence bootstrap can re-seed the sequence counter from Postgres on restart. This is an
+intentional Week 2 addition to the engine's public API — **not** a "corrected Week 1
+baseline." The Week 1 internals (matching/cancel logic, the synchronous hot path) are
+unchanged; only the constructor signature was extended. Any further engine change still
+needs explicit justification and flagging.
 
 ### Week 2 — IN PROGRESS (current focus)
 
@@ -111,9 +120,10 @@ order submission/cancellation. Full spec: `week2_persistence_realtime_spec.md`.
 
 ## Hard boundaries this week
 
-- No changes to `src/engine` — with one exception already taken and recorded above (the
-  `startSequence` constructor seed, a genuine restart-collision defect fix). Any further
-  engine change needs the same "genuine defect" justification, flagged explicitly.
+- No changes to `src/engine` internals — with one deliberate, logged exception to its
+  public surface: the `startSequence` constructor argument (see the Week 1 status note
+  above). Matching/cancel logic is untouched. Any further engine change needs explicit
+  justification, flagged.
 - No full HTTP framework (Express/Fastify) — Node's built-in `http` or a minimal router
   is enough for two internal endpoints.
 - No price feed / simulated ticks — that's Week 4.

@@ -87,8 +87,12 @@ CREATE TABLE orders (
     price           BIGINT      CHECK (price IS NULL OR price > 0), -- smallest unit; NULL for market
     quantity        BIGINT      NOT NULL CHECK (quantity > 0),
     filled_quantity BIGINT      NOT NULL DEFAULT 0 CHECK (filled_quantity >= 0),
+    -- 'pending' is a Laravel-side transient status: Laravel inserts the order as
+    -- 'pending' before forwarding it to the engine, then this module updates it
+    -- to an engine status on the resulting events. 'pending' deliberately does
+    -- NOT exist in the engine's OrderStatus type — it only ever lives in Postgres.
     status          TEXT        NOT NULL CHECK (
-                        status IN ('open', 'partially_filled', 'filled', 'cancelled', 'rejected')
+                        status IN ('pending', 'open', 'partially_filled', 'filled', 'cancelled', 'rejected')
                     ),
     sequence        BIGINT      NOT NULL,                         -- engine monotonic intake sequence
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
