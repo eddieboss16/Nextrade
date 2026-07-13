@@ -318,3 +318,76 @@ describe('sequence seeding across restart (collision fix)', () => {
     expect(() => new MatchingEngine(3 / 2)).toThrow(); // 1.5, non-integer
   });
 });
+
+describe('caller-supplied order id (Week 2)', () => {
+  it('uses a caller-supplied id verbatim in the resulting events', () => {
+    const events = engine.submitOrder({
+      id: 'laravel-abc',
+      instrumentId: INST,
+      accountId: 'A',
+      side: 'buy',
+      type: 'limit',
+      price: 100,
+      quantity: 5,
+    });
+    const rested = events.find((e) => e.type === 'order_resting');
+    expect(rested?.type).toBe('order_resting');
+    if (rested && rested.type === 'order_resting') {
+      expect(rested.order.id).toBe('laravel-abc');
+    }
+  });
+
+  it('rejects a duplicate caller-supplied id with order_rejected — no throw, no double-submit', () => {
+    const first = engine.submitOrder({
+      id: 'dup-1', instrumentId: INST, accountId: 'A', side: 'buy', type: 'limit', price: 100, quantity: 5,
+    });
+    expect(first.some((e) => e.type === 'order_resting')).toBe(true);
+
+    let second: EngineEvent[] = [];
+    expect(() => {
+      second = engine.submitOrder({
+        id: 'dup-1', instrumentId: INST, accountId: 'A', side: 'buy', type: 'limit', price: 100, quantity: 3,
+      });
+    }).not.toThrow();
+
+    expect(second).toHaveLength(1);
+    expect(second[0]!.type).toBe('order_rejected');
+    if (second[0]!.type === 'order_rejected') {
+      expect(second[0].reason).toMatch(/duplicate/i);
+    }
+    // No double-submit: the book still holds only the first order (qty 5, not 8).
+    expect(engine.getSnapshot(INST).bids).toEqual([{ price: 100, quantity: 5 }]);
+  });
+
+  it('auto-mints order-<sequence> when no id is supplied (Week 1 behaviour unchanged)', () => {
+    const events = engine.submitOrder(limit('buy', 100, 5, 'A'));
+    const rested = events.find((e) => e.type === 'order_resting');
+    if (rested && rested.type === 'order_resting') {
+      expect(rested.order.id).toBe('order-1');
+    }
+  });
+
+  it('the duplicate check is uniform: a caller-supplied id colliding with a later auto-minted id is caught', () => {
+    // A caller squats the string 'order-2' on the first order (engine sequence 1).
+    const first = engine.submitOrder({
+      id: 'order-2', instrumentId: INST, accountId: 'A', side: 'buy', type: 'limit', price: 100, quantity: 5,
+    });
+    expect(first.some((e) => e.type === 'order_resting')).toBe(true);
+
+    // The next order supplies NO id, so the engine auto-mints 'order-2' (sequence 2)
+    // — a collision. Were the check caller-id-only, this crossing sell would instead
+    // MATCH the resting buy and print a trade. The uniform check must reject it.
+    let second: EngineEvent[] = [];
+    expect(() => {
+      second = engine.submitOrder(limit('sell', 100, 5, 'B'));
+    }).not.toThrow();
+
+    expect(second).toHaveLength(1);
+    expect(second[0]!.type).toBe('order_rejected');
+    if (second[0]!.type === 'order_rejected') {
+      expect(second[0].reason).toMatch(/duplicate/i);
+    }
+    // No match happened: the resting buy is untouched.
+    expect(engine.getSnapshot(INST).bids).toEqual([{ price: 100, quantity: 5 }]);
+  });
+});

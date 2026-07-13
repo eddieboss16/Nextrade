@@ -42,12 +42,21 @@ export type EngineEvent =
   | { type: 'order_cancelled'; order: Order }
   | { type: 'order_rejected'; order: Order; reason: string };
 
-// The caller supplies the market-facing fields; the engine assigns id, sequence,
-// filledQuantity and status on intake.
+// The caller supplies the market-facing fields; the engine assigns sequence,
+// filledQuantity and status on intake (and the id, unless the caller supplies
+// one — see below).
 export type SubmitOrderInput = Pick<
   Order,
   'instrumentId' | 'accountId' | 'side' | 'type' | 'price' | 'quantity'
->;
+> & {
+  // ⚠ WEEK 2 EXCEPTION: optional caller-supplied order id. When Laravel forwards
+  // an order it has already persisted (as 'pending'), the id is caller-owned and
+  // the engine uses it verbatim, so persistence and cancel key on a single id. A
+  // duplicate id is rejected via the normal order_rejected path (never thrown).
+  // Omit it and the engine auto-mints `order-${sequence}` exactly as in Week 1.
+  // Trade ids stay engine-owned — trades are purely internal. See CLAUDE.md.
+  id?: string;
+};
 
 export interface PriceLevelSnapshot {
   price: number;

@@ -22,6 +22,12 @@ export class MatchingEngine {
   private readonly orders = new Map<string, Order>(); // every order, all statuses
   private sequenceCounter: number; // shared across orders and trades
 
+  // ⚠ WEEK 2 EXCEPTION to the "src/engine is untouched during Week 2" rule.
+  // This constructor argument is the ONLY post-Week-1 addition to the engine's
+  // public surface. Week 1 matching/cancel internals and the synchronous hot
+  // path are unchanged. See CLAUDE.md → "Permanent invariants" and the Week 1
+  // status note for the rationale and the standing rule this deviates from.
+  //
   // `startSequence` is the next sequence number the engine will hand out. On a
   // fresh engine it is 1. After a process restart it MUST be seeded to
   // (max persisted sequence across the `orders` and `trades` tables) + 1, so
@@ -46,8 +52,34 @@ export class MatchingEngine {
     // Sequence is assigned on intake — before validation — so the order exists
     // in the registry with a stable identity even if it is rejected.
     const sequence = this.nextSequence();
+    // Order id is caller-supplied when Laravel forwards an already-persisted
+    // order (WEEK 2), otherwise auto-minted exactly as in Week 1.
+    const id = input.id ?? `order-${sequence}`;
+
+    // Duplicate caller-supplied id — defense against a duplicate forward. Reject
+    // via the normal non-throwing rejection path WITHOUT overwriting the order
+    // already registered under this id. Auto-minted ids are always unique, so
+    // this only ever fires for a caller-supplied id.
+    if (this.orders.has(id)) {
+      const duplicate: Order = {
+        id,
+        instrumentId: input.instrumentId,
+        accountId: input.accountId,
+        side: input.side,
+        type: input.type,
+        price: input.price,
+        quantity: input.quantity,
+        filledQuantity: 0,
+        status: 'rejected',
+        sequence,
+      };
+      return [
+        { type: 'order_rejected', order: duplicate, reason: 'duplicate order id' },
+      ];
+    }
+
     const order: Order = {
-      id: `order-${sequence}`,
+      id,
       instrumentId: input.instrumentId,
       accountId: input.accountId,
       side: input.side,

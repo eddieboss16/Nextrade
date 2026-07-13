@@ -78,13 +78,19 @@ verified — not just tested, independently reviewed:
 Week 2 bug looks like it originates here, treat that as notable and flag it explicitly —
 it should not need to change.
 
-**Week 2 exception to the engine's public surface (logged deliberately):** `MatchingEngine`
-gained an optional `startSequence` constructor argument (default `1`) so the Week 2
-persistence bootstrap can re-seed the sequence counter from Postgres on restart. This is an
-intentional Week 2 addition to the engine's public API — **not** a "corrected Week 1
-baseline." The Week 1 internals (matching/cancel logic, the synchronous hot path) are
-unchanged; only the constructor signature was extended. Any further engine change still
-needs explicit justification and flagging.
+**Week 2 exceptions to the engine's public surface (logged deliberately).** Two intentional
+additions to the engine's public API this week — **not** a "corrected Week 1 baseline." The
+Week 1 internals (matching/cancel logic, the synchronous hot path) are unchanged.
+1. `MatchingEngine(startSequence = 1)` constructor arg — lets the Week 2 persistence
+   bootstrap re-seed the sequence counter from `MAX(sequence)` in Postgres on restart, so
+   regenerated ids never collide with persisted rows.
+2. Optional `SubmitOrderInput.id` — the order id is **caller-owned**: Laravel persists the
+   order row (as `pending`) before forwarding, so it owns the id and the engine uses it
+   verbatim; a duplicate id is rejected via the normal `order_rejected` path (never thrown).
+   Omit it and the engine auto-mints `order-${sequence}` as in Week 1. **Trade ids remain
+   engine-owned** — trades are purely internal, Laravel never pre-creates one.
+
+Any further engine change still needs explicit justification and flagging.
 
 ### Week 2 — IN PROGRESS (current focus)
 
