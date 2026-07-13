@@ -124,6 +124,19 @@ order submission/cancellation. Full spec: `week2_persistence_realtime_spec.md`.
    Postgres rows, and a connected WS client's received message. Disagreement between any
    two of these is the bug to chase before calling the week done.
 
+## Internal API contract (Laravel / Week 3 — hard requirements)
+
+- **A `200` from `POST /internal/orders` does NOT guarantee acceptance.** The caller MUST
+  inspect the returned `events` array for an `order_rejected` event — the status code
+  alone is not sufficient. (Only a duplicate id is elevated to `409`; every other outcome,
+  including an engine-level rejection, returns `200` with the events.) This is a hard
+  requirement for Laravel's Week 3 client, not a suggestion.
+- **The two network surfaces have different long-term exposure.** `/internal/orders*` is
+  Laravel-only and loopback-only *permanently* — never proxied publicly by nginx.
+  `/stream/:instrumentId` is loopback-bound today (same reason as everything else this
+  week), but is intended to be reverse-proxied by nginx in deployment so the browser
+  client can reach it directly, per the original architecture.
+
 ## Hard boundaries this week
 
 - No changes to `src/engine` internals — with one deliberate, logged exception to its
